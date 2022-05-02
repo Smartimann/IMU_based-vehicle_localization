@@ -51,13 +51,14 @@ def main():
         default='1280x720',
         help='window resolution (default: 1280x720)')
     argparser.add_argument(
-        '--script_name', 
+        '-sn','--script_name', 
+        dest='script_name',
         metavar="SD",
-        default='get_sensor_data', 
         help='specifiy the scripts name you want to execute'
     )
+    
 
-    argparser.add_argument()
+
 
     args = argparser.parse_args()
 
@@ -72,8 +73,11 @@ def main():
         if (client): 
             print("connection worked")
             if (args.script_name == 'get_sensor_data'): 
-                import get_sensor_data
-                get_sensor_data.run_simulation(args, client)
+                import get_sensor_data as gsd
+                gsd.run_simulation(args, client)
+            elif (args.script_name == 'retrieve_map_data'): 
+                import retrieve_map_data as rmd
+                rmd.get_simulation_map(args, client)
 
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')    
