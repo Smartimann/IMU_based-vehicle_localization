@@ -54,7 +54,20 @@ def main():
         '-sn','--script_name', 
         dest='script_name',
         metavar="SD",
-        help='specifiy the scripts name you want to execute'
+        help='choose: get_sensor_data, retrieve_map_data, change_weather'
+    )
+
+    argparser.add_argument(
+        '-dt', '--daytime', 
+        dest='daytime',
+        default='day',
+        help='choose: day, night'
+    )
+    argparser.add_argument(
+        '-w','--weather',
+        default='clear',
+        dest='weather',
+        help='choose: clear, light_fog, heavy_fog, light_rain, heavy_rain, rainy_storm, clear_storm'
     )
     
 
@@ -78,6 +91,9 @@ def main():
             elif (args.script_name == 'retrieve_map_data'): 
                 import retrieve_map_data as rmd
                 rmd.get_simulation_map(args, client)
+            elif(args.script_name == 'change_weather'): 
+                import change_weather as cw
+                cw.change_weather(args, client)
 
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')    
