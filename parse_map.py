@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import argparse
 
-from progress.bar import ChargingBar
 
 
 # function to parse the xml document
@@ -192,70 +191,52 @@ def save_road_as_dict(road):
 def calculate_line(length, hdg, x,y):      
     return lambda t: (np.array([np.cos(hdg), np.sin(hdg)]) * length * t) + np.array([x,y])
 
-def calculate_arc(length, hdg, curvature, x,y): 
+def calculate_arc(curvature, x,y): 
     return lambda t: np.array([x,y]) + 1/curvature * np.array([np.cos(t/(1/curvature)), np.sin(t/(1/curvature))])
 
-def deriv_arc(length, hdg, curvature, x,y): 
+def deriv_arc(curvature): 
     return lambda t: np.array([-np.sin(t*curvature), np.cos(t*curvature)])
 
-def deriv_line(length, hdg): 
-    return lambda t: np.array([-np.sin(hdg), np.cos(hdg)])*length
 
-def get_hdg_vec(hdg): 
-    return np.array([np.cos(hdg), np.sin(hdg)])
-
-    
-# returns the arc with correct heading and length
-def get_adjusted_arc(x,y,hdg, length, curvature):
-    # get the derivation of this arc
-    deriv_of_arc = deriv_arc(length, hdg, curvature, x,y)
-    # get the derivation of according tangent
-    deriv_of_line = deriv_line(length, hdg)
-    # get the tempo vector
-    tempo_vec = deriv_of_line(0)
-    #get the gradient of the line
-    line_gradient = tempo_vec[1] / tempo_vec[0]
-    #get the stepsize
+def get_adjusted_arc(x,y,hdg,length,curvature): 
+    #first create the arc and then translate the tempo vector at the base and apply that translation to all points
     step = 0.001
-    # get all the T values
-    arc_Ts = np.arange(0, 2*np.pi + step, step)
-    
-    arc_gradients = []
-    line_gradients = []
-    #iterate over t values
-    for t in arc_Ts: 
-        arc_tempo_vec = deriv_of_arc(t)
-        if (arc_tempo_vec[0] == 0): 
-            arc_tempo_vec[0] = 0.00000000001
-        # append the gradients for each t value of the curve in a list
-        arc_gradients.append(arc_tempo_vec[1] / arc_tempo_vec[0])
-        line_gradients.append(line_gradient)
-    
-    #find the index with the lowest difference between gradients
-    gradient_diffs = np.array(arc_gradients)-np.array(line_gradients)
-    min_diff_index = np.argmin(gradient_diffs)
-    t = arc_Ts[min_diff_index]
-    
+    arc_Ts = np.arange(0, 1000 + step, step)
 
-    # start at the according t value
-    arc_Ts = np.arange(t, 10000 + step, step)
-    arc = calculate_arc(length, hdg, curvature, x,y)
+    arc = calculate_arc(curvature, x,y)
+    deriv_of_arc = deriv_arc(curvature)
+
     adjusted_arc_points = []
     arc_length = 0
-    # Do the parametrisation and translate all points so that start of the curve is at x,y
     for t in arc_Ts: 
         adjusted_arc_points.append(arc(t))
-        arc_length += np.linalg.norm(deriv_of_arc(t)*step)
-        # draw arc as long as it stays in length
+        arc_length += np.linalg.norm(deriv_of_arc(t))*step
         if (arc_length >= length): 
             break
-        
-    
-    # translate points
-    adjusted_arc_points = np.array(adjusted_arc_points)
-    difference_vec = np.array(adjusted_arc_points[0] - np.array([x,y])) 
-    adjusted_arc_points = adjusted_arc_points - difference_vec
-    return adjusted_arc_points
+
+    # find the tempo vector at t0
+    tempo_vec_t0 = deriv_of_arc(arc_Ts[0])
+
+    # create the target vector 
+    target_vec = np.array([np.cos(hdg), np.sin(hdg)])
+
+    # get angle between vectors 
+    tempo_vec_t0_angle = np.arctan2(tempo_vec_t0[1], tempo_vec_t0[0])
+    target_vec_angle = np.arctan2(target_vec[1], target_vec[0])
+
+    theta = tempo_vec_t0_angle - target_vec_angle 
+
+    # define rotation matrix and rotatr points
+    rot = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+
+    tempo_vec_t0_rot = np.dot(tempo_vec_t0,rot)
+    adjusted_arc_points_rot = np.dot(adjusted_arc_points, rot)
+
+    # find translation vector and translate to center
+    direction = np.array([x,y]) - adjusted_arc_points_rot[0]
+    adjusted_arc_points_rot_trans = adjusted_arc_points_rot + direction
+
+    return np.array(adjusted_arc_points_rot_trans)
 
 # returns array of points with all geometries 
 def get_all_geoms_as_points(geometries): 
@@ -263,7 +244,6 @@ def get_all_geoms_as_points(geometries):
     plot_arcs = np.empty([0,2])
     step = 0.001
     Line_Ts = np.arange(0,1+step,step)
-    Arc_Ts = np.arange(0, 2*np.pi + step, step)
     for geometry in geometries: 
         current = geometries[geometry] 
         for g in current: 
@@ -274,8 +254,6 @@ def get_all_geoms_as_points(geometries):
                 points = [line(t) for t in Line_Ts]
                 plot_lines += points
             elif (g['line'] != True and g['arc']['curvature'] != None): 
-                #print(g['arc']['curvature'])
-                #arc = calculate_arc(float(g['length']), float(g['hdg']), float(g['arc']['curvature']),float(g['x']),float(g['y']))
                 points = get_adjusted_arc(float(g['x']),float(g['y']), float(g['hdg']), float(g['length']), float(g['arc']['curvature']))
                 plot_arcs = np.concatenate([plot_arcs, points])  
     plot_lines = np.array(plot_lines)
