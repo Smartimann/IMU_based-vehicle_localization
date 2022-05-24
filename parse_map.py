@@ -1,3 +1,4 @@
+from calendar import c
 from lxml import etree 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -247,9 +248,7 @@ def get_all_geoms_as_points(geometries):
     for geometry in geometries: 
         current = geometries[geometry] 
         for g in current: 
-            #print(g)
             if (g['line']): 
-                #print("Line")
                 line = calculate_line(float(g['length']), float(g['hdg']), float(g['x']),float(g['y']))
                 points = [line(t) for t in Line_Ts]
                 plot_lines += points
@@ -271,20 +270,9 @@ def plot_map(lines, arcs):
 
 
 
-def main(): 
-    argparser = argparse.ArgumentParser(
-        description='Script to create and plot the map')
-    argparser.add_argument(
-        '--filename',
-        metavar='f',
-        dest='filename',
-        default='data',
-        help='Typt the name of the xodr file')
-
-    args = argparser.parse_args()
-
-    print("Opening File: " + args.filename+".xodr")
-    filename = "data/"+args.filename+".xodr"
+def parse_map(map_name): 
+    print("Opening File: " + map_name+".xodr")
+    filename = "data/"+map_name+".xodr"
     with open(filename) as fi: 
         xml_root = etree.parse(fi).getroot()
     all_roads = {}
@@ -299,10 +287,32 @@ def main():
     print("Extracting all geometries")
     for index, row in df.iterrows(): 
         geometries[index] = row['planView']
+
+    return geometries
+
+
+def calculate_raods(geometries): 
     print("Calculating parametric curves")
-    lines, arcs = get_all_geoms_as_points(geometries=geometries)
-    print("Plotting Curves")
-    plot_map(lines, arcs)
+    lines, arcs = get_all_geoms_as_points(geometries)
+    return lines, arcs
+
+
+def main(): 
+    argparser = argparse.ArgumentParser(
+        description='Script to create and plot the map')
+        
+    argparser.add_argument(
+        '--filename',
+        metavar='f',
+        dest='filename',
+        default='data',
+        help='Typt the name of the xodr file')
+
+    args = argparser.parse_args()
+    geometries = parse_map(map_name=args.filename)
+    lines, arcs = calculate_raods(geometries)
+    plot_map(lines,arcs)
+
 if __name__ == '__main__':
 
     main()
