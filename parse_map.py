@@ -2,8 +2,10 @@ from calendar import c
 from lxml import etree 
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import numpy as np
 import argparse
+import utils
 
 
 
@@ -259,15 +261,20 @@ def get_all_geoms_as_points(geometries):
     plot_arcs = np.array(plot_arcs)
     return plot_lines, plot_arcs
 
-def plot_map(lines, arcs): 
-    plt.scatter(lines[:,0],lines[:,1], c='blue', label="Lines",s=0.1)
-    plt.scatter(arcs[:,0],arcs[:,1], c='orange', label="Arcs", s= 1)
+def plot_map(lines, arcs, boundings):
+
+    fig, ax = plt.subplots()
+    #bounding_boxes = [patches.Rectangle((bounding[0], bounding[1]), bounding[2], bounding[3]) for bounding in boundings]
+    lines = -lines
+    arcs = -arcs 
+    ax.scatter(boundings[:,0], boundings[:,1], label="Environment", s=1, c='red', alpha=.4)
+    ax.scatter(lines[:,0],lines[:,1], c='blue', label="Lines",s=0.1, alpha=.6)
+    ax.scatter(arcs[:,0],arcs[:,1], c='orange', label="Arcs", s= .1, alpha=.6)
+
+    plt.xlim(-200,200)
+    plt.ylim(-200,200)
+    ax.legend(loc="upper left")
     plt.show()
-
-
-
-
-
 
 
 def parse_map(map_name): 
@@ -296,6 +303,7 @@ def calculate_raods(geometries):
     lines, arcs = get_all_geoms_as_points(geometries)
     return lines, arcs
 
+ 
 
 def main(): 
     argparser = argparse.ArgumentParser(
@@ -311,6 +319,7 @@ def main():
     args = argparser.parse_args()
     geometries = parse_map(map_name=args.filename)
     lines, arcs = calculate_raods(geometries)
+    utils.write_map_to_csv(args.filename, lines, arcs)
     plot_map(lines,arcs)
 
 if __name__ == '__main__':

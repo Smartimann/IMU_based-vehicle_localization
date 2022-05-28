@@ -54,7 +54,7 @@ def main():
         '-sn','--script_name', 
         dest='script_name',
         metavar="SD",
-        help='choose: get_sensor_data, retrieve_map_data, change_weather'
+        help='choose: get_sensor_data, retrieve_map_data, change_weather, get_surroundings'
     )
 
     argparser.add_argument(
@@ -69,7 +69,8 @@ def main():
         dest='weather',
         help='choose: clear, light_fog, heavy_fog, light_rain, heavy_rain, rainy_storm, clear_storm'
     )
-    
+
+  
 
 
 
@@ -94,6 +95,9 @@ def main():
             elif(args.script_name == 'change_weather'): 
                 import change_weather as cw
                 cw.change_weather(args, client)
+            elif(args.script_name == 'get_surroundings'): 
+                import get_surroundings as gs
+                gs.get_surroundings(args, client)
 
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')    

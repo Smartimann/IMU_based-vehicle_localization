@@ -17,6 +17,7 @@ import glob
 import logging
 import math
 import os
+from time import time
 import numpy.random as random
 import re
 import sys
@@ -51,18 +52,13 @@ except IndexError:
 
 import carla
 
-try:
-    import pygame
-    from pygame.locals import K_ESCAPE
-    from pygame.locals import K_q
-except ImportError:
-    raise RuntimeError('cannot import pygame, make sure pygame package is installed')
 
 def run_simulation(args, client): 
     actor_list = []
     accelerometer_values = []
     gyroscope_values = []
     timestamps = []
+    positions = []
     try: 
         world = client.get_world()
         blueprint_library = world.get_blueprint_library()
@@ -105,6 +101,8 @@ def run_simulation(args, client):
             gyroscope_values.append([imu.gyroscope.x, imu.gyroscope.y, imu.gyroscope.z])
             timestamps.append(imu.timestamp)
             print("IMU measure:\n"+str(imu)+'\n')
+            print(vehicle.get_transform().location)
+            positions.append(np.array([vehicle.get_transform().location.x, vehicle.get_transform().location.y]))
         ego_imu.listen(lambda imu: imu_callback(imu))
 
 
@@ -131,11 +129,19 @@ def run_simulation(args, client):
         }
         today = datetime.datetime.now().strftime("%d_%m_%y_%H_%M_%S")
         utils.write_to_csv("Simulation_test_run"+str(today), retrieved_data)
+     
+
+        positions = np.array(positions)
+        position_data = {
+            'x': positions[:,0], 
+            'y': positions[:,1], 
+            'timestamps': timestamps
+        }
+        utils.write_to_csv('car_positions', position_data)
         print('destorying all actors')
         ego_imu.destroy()
         client.apply_batch([carla.command.DestroyActor(x) for x in actor_list])
         print('done.')
-
 
 def main():
     argparser = argparse.ArgumentParser(
