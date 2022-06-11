@@ -6,8 +6,8 @@ import math
 def write_to_csv(name, data): 
     path = 'data/'+str(name)+'.csv'
     df = pd.DataFrame(data)
-
     df.to_csv(path)
+    print("Wrote " + name + " to csv")
 
 
 def write_map_to_csv(name,lines, arcs):
