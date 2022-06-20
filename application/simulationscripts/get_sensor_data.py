@@ -10,20 +10,21 @@
 
 from __future__ import print_function
 
+import os
+import sys
+# Define root folder
+PROJECT_ROOT = os.path.abspath(os.path.join(
+                  os.path.dirname(__file__), 
+                  os.pardir)
+)
+sys.path.append(PROJECT_ROOT)
+
 import argparse
-import collections
 import datetime
 import glob
-import logging
-import math
-import os
 from time import time
 import numpy.random as random
-import re
-import sys
-import weakref
 import utils
-
 
 try:
     import numpy as np
@@ -31,9 +32,8 @@ except ImportError:
     raise RuntimeError(
         'cannot import numpy, make sure numpy package is installed')
 
-# ==============================================================================
-# -- Find CARLA module ---------------------------------------------------------
-# ==============================================================================
+
+# Find CARLA module 
 try:
     sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (
         sys.version_info.major,
@@ -42,9 +42,7 @@ try:
 except IndexError:
     pass
 
-# ==============================================================================
-# -- Add PythonAPI for release mode --------------------------------------------
-# ==============================================================================
+# Add PythonAPI for release mode 
 try:
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/carla')
 except IndexError:

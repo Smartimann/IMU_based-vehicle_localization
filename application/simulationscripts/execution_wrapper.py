@@ -2,17 +2,10 @@
 from __future__ import print_function
 
 import argparse
-import collections
-import datetime
-import glob
-import logging
-import math
 import os
 import numpy.random as random
-import re
 import sys
-import weakref
-import utils
+
 try:
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/carla')
 except IndexError:
