@@ -77,6 +77,7 @@ def run_simulation(args, client):
         
         vehicle.set_autopilot(True)
 
+        print(vehicle)
     
         # --------------
         # Spectator on ego position
