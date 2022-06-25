@@ -5,6 +5,13 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import numpy as np
 import argparse
+import sys 
+import os
+PROJECT_ROOT = os.path.abspath(os.path.join(
+                  os.path.dirname('utils'), 
+                  os.pardir)
+)
+sys.path.append(PROJECT_ROOT)
 import utils
 
 
@@ -279,7 +286,7 @@ def plot_map(lines, arcs, boundings):
 
 def parse_map(map_name): 
     print("Opening File: " + map_name+".xodr")
-    filename = "data/"+map_name+".xodr"
+    filename = PROJECT_ROOT + "\\..\\data\\"+map_name+".xodr"
     with open(filename) as fi: 
         xml_root = etree.parse(fi).getroot()
     all_roads = {}
@@ -320,7 +327,7 @@ def main():
     geometries = parse_map(map_name=args.filename)
     lines, arcs = calculate_raods(geometries)
     utils.write_map_to_csv(args.filename, lines, arcs)
-    plot_map(lines,arcs)
+    #plot_map(lines,arcs)
 
 if __name__ == '__main__':
 
