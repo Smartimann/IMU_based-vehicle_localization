@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 import os
-from numba import jit, cuda
+from numba import jit,njit, vectorize, cuda
 
 
 from pip import main
@@ -34,14 +34,14 @@ class DistanceMap():
         self.size_y = int(self.y_max_bound - self.y_min_bound)
         self.map_array = np.zeros((self.y_max_bound + (0 - self.y_min_bound), self.x_max_bound + (0 -self.x_min_bound)))
         #self.map_array = self.map_array[200:300, 200:300]
-        self.converted_points = None
+        self.converted_points = []
         self.distance_map = np.zeros_like(self.map_array)
         self.create()
 
 
     def create(self): 
         self.fill_map_with_road_points()
-        self.create_distance_map()
+        #self.create_distance_map()
 
 
     def convert_coord_into_image(self, point):
@@ -53,37 +53,33 @@ class DistanceMap():
         return point - np.array([0-(self.x_min_bound ), 0-(self.y_min_bound)])
 
     def fill_map_with_road_points(self):    
-        converted_points = []
         for p in self.road_point_indicies: 
-            try: 
-                converted_point = self.convert_coord_into_image(p)
-                self.map_array[converted_point[1], converted_point[0]] = 1
-                converted_points.append(converted_point)
-            except: 
-                #break
-                pass
-        self.converted_points = np.array(converted_points)
+            converted_point = self.convert_coord_into_image(p)
+            self.map_array[converted_point[1], converted_point[0]] = 1
+            self.converted_points.append(converted_point)
+        self.converted_points = np.array(self.converted_points)
         print("Converted Points", self.converted_points.shape)
         print(self.map_array.shape)
         #self.map_array = self.map_array[200:300, 200:300]
 
-
+    @cuda.jit(device=True)						
+    def find_lowest_distance(self, current_point):
+        substraction_results = current_point-self.converted_points
+        min_distance = np.apply_along_axis(np.linalg.norm, 1, substraction_results).min() 
+        if (min_distance == 0): 
+            distance = 1
+        else:
+            distance = 1/min_distance
+        return distance    
+        
     def create_distance_map(self): 
         smallest = 0
         largest = np.linalg.norm((np.array([0,0])-np.array(self.map_array.shape)))
         for y in range(0,self.map_array.shape[0]):
             for x in range(0,self.map_array.shape[1]):
                 current_point = np.array([x,y])
-                substraction_results = current_point-self.converted_points
-                min_distance = np.apply_along_axis(np.linalg.norm, 1, substraction_results).min() 
-                if (min_distance == 0): 
-                    distance = 1
-                else:
-                    distance = 1/min_distance
-                self.distance_map[y,x] = distance
-                self.distance_map[y-1,x-1] = distance
-                self.distance_map[y-2,x-2] = distance
-                self.distance_map[y-3,x-3] = distance
+                self.distance_map[y,x] = self.find_lowest_distance(current_point)
+       
 
     def show_map(self): 
         print("Show map")
@@ -99,8 +95,8 @@ class DistanceMap():
 
 def main(): 
     distance_map = DistanceMap(2, 100, 'road_points_data25_06_22_15_59_09')
-    #distance_map.show_map()
-    distance_map.show_distance_map(str(distance_map.decimal_places)+'_'+str(distance_map.additional_border))
+    distance_map.show_map()
+    #distance_map.show_distance_map(str(distance_map.decimal_places)+'_'+str(distance_map.additional_border))
     #plt.imsave(PROJECT_ROOT+'\\map.png', np.random.rand(100,100), cmap='gray', format="png")
 if __name__ == '__main__':
     main()    
