@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import sys
 import os
 from numba import jit,njit, vectorize, cuda
-
+import math
 
 from pip import main
 PROJECT_ROOT = os.path.abspath(os.path.join(
@@ -14,7 +14,34 @@ PROJECT_ROOT = os.path.abspath(os.path.join(
 sys.path.append(PROJECT_ROOT)
 import utils
 
+@cuda.jit(device=True)						
+def find_lowest_distance(substraction_results): 
+    lowest_distance = 10000000
+    for i in range(len(substraction_results)): 
+        distance = np.sqrt(substraction_results[0]*substraction_results[0] + substraction_results[1]*substraction_results[1])
+        if distance < lowest_distance: 
+            lowest_distance = distance
+    return lowest_distance
 
+@cuda.jit(device=True)						
+def find_lowest_distance(current_point, converted_points, substraction_results):
+    for i in range(len(converted_points)): 
+        substraction_results[i][0] = current_point[0] - converted_points[i][0]
+        substraction_results[i][1] = current_point[1] - converted_points[i][1]         
+    min_distance = find_lowest_distance(substraction_results) 
+    if (min_distance == 0): 
+        distance = 1
+    else:
+        distance = 1/min_distance
+    return distance    
+
+@cuda.jit
+def create_distance_map(map_array, distance_map, current_point): 
+    x,y = cuda.grid(2)
+    if (x < map_array.shape[0] and y < map_array.shape[1]):
+        current_point[0] = x
+        current_point[1] = y
+        distance_map[x,y] = find_lowest_distance(current_point)
 
 class DistanceMap(): 
     def __init__(self, decimal_places, additional_border, filename) -> None:
@@ -62,23 +89,8 @@ class DistanceMap():
         print(self.map_array.shape)
         #self.map_array = self.map_array[200:300, 200:300]
 
-    @cuda.jit(device=True)						
-    def find_lowest_distance(self, current_point):
-        substraction_results = current_point-self.converted_points
-        min_distance = np.apply_along_axis(np.linalg.norm, 1, substraction_results).min() 
-        if (min_distance == 0): 
-            distance = 1
-        else:
-            distance = 1/min_distance
-        return distance    
-        
-    def create_distance_map(self): 
-        smallest = 0
-        largest = np.linalg.norm((np.array([0,0])-np.array(self.map_array.shape)))
-        for y in range(0,self.map_array.shape[0]):
-            for x in range(0,self.map_array.shape[1]):
-                current_point = np.array([x,y])
-                self.distance_map[y,x] = self.find_lowest_distance(current_point)
+ 
+
        
 
     def show_map(self): 
@@ -96,6 +108,14 @@ class DistanceMap():
 def main(): 
     distance_map = DistanceMap(2, 100, 'road_points_data25_06_22_15_59_09')
     distance_map.show_map()
+    print("Finished creating map array")
+    threadsperblock = (16,16)
+    blockspergrid_x = math.ceil(distance_map.distance_map.shape[0] / threadsperblock[0])
+    blockspergrid_y = math.ceil(distance_map.distance_map.shape[1] / threadsperblock[1])
+    blockspergrid = (blockspergrid_x, blockspergrid_y)
+    distance_map.distance_map = create_distance_map[threadsperblock, blockspergrid](distance_map.map_array, distance_map.distance_map, np.array([0,0]))
+    distance_map.show_distance_map("manno")
+    print("Finished creating distance map")
     #distance_map.show_distance_map(str(distance_map.decimal_places)+'_'+str(distance_map.additional_border))
     #plt.imsave(PROJECT_ROOT+'\\map.png', np.random.rand(100,100), cmap='gray', format="png")
 if __name__ == '__main__':
