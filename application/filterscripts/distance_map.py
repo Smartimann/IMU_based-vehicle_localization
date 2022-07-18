@@ -5,6 +5,7 @@ import sys
 import os
 from numba import jit,njit, vectorize, cuda
 import math
+import cv2 as cv
 
 from pip import main
 PROJECT_ROOT = os.path.abspath(os.path.join(
@@ -13,35 +14,6 @@ PROJECT_ROOT = os.path.abspath(os.path.join(
 )
 sys.path.append(PROJECT_ROOT)
 import utils
-
-@cuda.jit(device=True)						
-def find_lowest_distance(substraction_results): 
-    lowest_distance = 10000000
-    for i in range(len(substraction_results)): 
-        distance = np.sqrt(substraction_results[0]*substraction_results[0] + substraction_results[1]*substraction_results[1])
-        if distance < lowest_distance: 
-            lowest_distance = distance
-    return lowest_distance
-
-@cuda.jit(device=True)						
-def find_lowest_distance(current_point, converted_points, substraction_results):
-    for i in range(len(converted_points)): 
-        substraction_results[i][0] = current_point[0] - converted_points[i][0]
-        substraction_results[i][1] = current_point[1] - converted_points[i][1]         
-    min_distance = find_lowest_distance(substraction_results) 
-    if (min_distance == 0): 
-        distance = 1
-    else:
-        distance = 1/min_distance
-    return distance    
-
-@cuda.jit
-def create_distance_map(map_array, distance_map, current_point): 
-    x,y = cuda.grid(2)
-    if (x < map_array.shape[0] and y < map_array.shape[1]):
-        current_point[0] = x
-        current_point[1] = y
-        distance_map[x,y] = find_lowest_distance(current_point)
 
 class DistanceMap(): 
     def __init__(self, decimal_places, additional_border, filename) -> None:
@@ -68,8 +40,11 @@ class DistanceMap():
 
     def create(self): 
         self.fill_map_with_road_points()
-        #self.create_distance_map()
+        self.create_distance_map()
 
+    def create_distance_map(self): 
+        self.map_array = cv.cvtColor()
+        self.distance_map = cv.distanceTransform(self.map_array, cv.DIST_L2, 3)
 
     def convert_coord_into_image(self, point):
         '''Converts a coordinate from map coodrinates to image coordinates'''
@@ -89,31 +64,22 @@ class DistanceMap():
         print(self.map_array.shape)
         #self.map_array = self.map_array[200:300, 200:300]
 
- 
-
-       
-
     def show_map(self): 
         print("Show map")
         plt.imshow(self.map_array, cmap='gray')
         #plt.imsave('map',self.map_array)
         plt.show()
     def show_distance_map(self, name): 
-        plt.imsave(PROJECT_ROOT+'\\'+name+'.png', self.distance_map, cmap='gray', format="png")
-        #plt.imshow(self.distance_map, cmap='gray')
-        #plt.show()
+        #plt.imsave(PROJECT_ROOT+'\\'+name+'.png', self.distance_map, cmap='gray', format="png")
+        plt.imshow(self.distance_map, cmap='gray')
+        plt.show()
 
 
 
 def main(): 
-    distance_map = DistanceMap(2, 100, 'road_points_data25_06_22_15_59_09')
-    distance_map.show_map()
+    distance_map = DistanceMap(1, 100, 'road_points_data_test')
+    #distance_map.show_map()
     print("Finished creating map array")
-    threadsperblock = (16,16)
-    blockspergrid_x = math.ceil(distance_map.distance_map.shape[0] / threadsperblock[0])
-    blockspergrid_y = math.ceil(distance_map.distance_map.shape[1] / threadsperblock[1])
-    blockspergrid = (blockspergrid_x, blockspergrid_y)
-    distance_map.distance_map = create_distance_map[threadsperblock, blockspergrid](distance_map.map_array, distance_map.distance_map, np.array([0,0]))
     distance_map.show_distance_map("manno")
     print("Finished creating distance map")
     #distance_map.show_distance_map(str(distance_map.decimal_places)+'_'+str(distance_map.additional_border))
