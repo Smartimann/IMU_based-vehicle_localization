@@ -104,7 +104,7 @@ def run_simulation(args, client):
             accelerometer_values.append([imu.accelerometer.x, imu.accelerometer.y, imu.accelerometer.z])
             gyroscope_values.append([imu.gyroscope.x, imu.gyroscope.y, imu.gyroscope.z])
             timestamps.append(imu.timestamp)
-            steerings.append(vehicle.get_wheel_steer_angle(FL_Wheel))
+            steerings.append(vehicle.get_wheel_steer_angle(carla.VehicleWheelLocation.FL_Wheel))
             #print(front_wheels[0])
             throttles.append(vehicle_control.throttle)
             orientations.append((imu.compass + np.pi) % np.pi*2)
