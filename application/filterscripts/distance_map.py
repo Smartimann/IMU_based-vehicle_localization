@@ -88,7 +88,7 @@ class DistanceMap():
 
 
 def main(): 
-    distance_map = DistanceMap(1, 100, 'road_points_data')
+    distance_map = DistanceMap(1, 500, 'road_points_data')
     distance_map.save_map()
     print("Finished creating map array")
     distance_map.save_distance_map()
