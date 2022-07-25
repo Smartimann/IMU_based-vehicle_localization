@@ -57,11 +57,16 @@ def run_simulation(args, client):
     gyroscope_values = []
     timestamps = []
     positions = []
+    orientations = []
+    velocities = []
+    steerings = []
+    throttles = []
+    accelerations = [] 
     try: 
         world = client.get_world()
         blueprint_library = world.get_blueprint_library()
 
-        bp_vehicle = random.choice(blueprint_library.filter('vehicle'))
+        bp_vehicle = blueprint_library.filter('a2')[0]
 
         if bp_vehicle.has_attribute('color'): 
             color = random.choice(bp_vehicle.get_attribute('color').recommended_values)
@@ -74,20 +79,20 @@ def run_simulation(args, client):
         print('created %s' % vehicle.type_id)
         
         vehicle.set_autopilot(True)
-
-        print(vehicle)
-    
+        vehicle_control = vehicle.get_control()
+        vehicle_physics_control = vehicle.get_physics_control()
+        front_wheels = vehicle_physics_control.wheels[0:2]
         # --------------
         # Spectator on ego position
         # --------------
         spectator = world.get_spectator()
         world_snapshot = world.wait_for_tick() 
         spectator.set_transform(vehicle.get_transform())
-
-
+        #measurement, sensor_data = client.read_data()
         # --------------
         # Add IMU sensor to ego vehicle. 
         # --------------
+
 
         imu_bp = world.get_blueprint_library().find('sensor.other.imu')
         imu_location = carla.Location(0,0,0)
@@ -99,8 +104,12 @@ def run_simulation(args, client):
             accelerometer_values.append([imu.accelerometer.x, imu.accelerometer.y, imu.accelerometer.z])
             gyroscope_values.append([imu.gyroscope.x, imu.gyroscope.y, imu.gyroscope.z])
             timestamps.append(imu.timestamp)
-            print("IMU measure:\n"+str(imu)+'\n')
-            print(vehicle.get_transform().location)
+            steerings.append(vehicle.get_wheel_steer_angle(FL_Wheel))
+            #print(front_wheels[0])
+            throttles.append(vehicle_control.throttle)
+            orientations.append((imu.compass + np.pi) % np.pi*2)
+            velocities.append(np.array([vehicle.get_velocity().x, vehicle.get_velocity().y]))
+            accelerations.append(np.array([vehicle.get_acceleration().x, vehicle.get_acceleration().y]))
             positions.append(np.array([vehicle.get_transform().location.x, vehicle.get_transform().location.y]))
         ego_imu.listen(lambda imu: imu_callback(imu))
 
@@ -116,6 +125,8 @@ def run_simulation(args, client):
         accelerometer_values = np.array(accelerometer_values)
         gyroscope_values = np.array(gyroscope_values)
         timestamps = np.array(timestamps)
+        velocities = np.array(velocities)
+        accelerations = np.array(accelerations)
 
         retrieved_data = {
             'accelerometer_x': accelerometer_values[:, 0], 
@@ -124,6 +135,13 @@ def run_simulation(args, client):
             'gyroscope_x': gyroscope_values[:,0],
             'gyroscope_y': gyroscope_values[:,1],
             'gyroscope_z': gyroscope_values[:,2], 
+            'orientations': orientations,
+            'velocity_x': velocities[:,0],
+            'velocity_y': velocities[:,1],
+            'acc_x': accelerations[:,0], 
+            'acc_y': accelerations[:,1],
+            'steering': steerings,
+            'throttle': throttles,
             'timestamps': timestamps
         }
         today = datetime.datetime.now().strftime("%d_%m_%y_%H_%M_%S")
