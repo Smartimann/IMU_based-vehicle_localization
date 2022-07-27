@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 import os
-from numba import jit,njit, vectorize, cuda
 import math
 import cv2 as cv
 

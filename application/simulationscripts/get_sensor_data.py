@@ -101,8 +101,8 @@ def run_simulation(args, client):
         imu_bp.set_attribute("sensor_tick",str(1/10))
         ego_imu = world.spawn_actor(imu_bp,imu_transform,attach_to=vehicle, attachment_type=carla.AttachmentType.Rigid)
         def imu_callback(imu):
-            accelerometer_values.append([imu.accelerometer.x, imu.accelerometer.y, imu.accelerometer.z])
-            gyroscope_values.append([imu.gyroscope.x, imu.gyroscope.y, imu.gyroscope.z])
+            accelerometer_values.append(np.array([imu.accelerometer.x, imu.accelerometer.y, imu.accelerometer.z]))
+            gyroscope_values.append(np.array([imu.gyroscope.x, imu.gyroscope.y, imu.gyroscope.z]))
             timestamps.append(imu.timestamp)
             steerings.append(vehicle.get_wheel_steer_angle(carla.VehicleWheelLocation.FL_Wheel))
             #print(front_wheels[0])
@@ -127,7 +127,7 @@ def run_simulation(args, client):
         timestamps = np.array(timestamps)
         velocities = np.array(velocities)
         accelerations = np.array(accelerations)
-
+        positions = np.array(positions)
         retrieved_data = {
             'accelerometer_x': accelerometer_values[:, 0], 
             'accelerometer_y': accelerometer_values[:, 1], 
@@ -142,6 +142,8 @@ def run_simulation(args, client):
             'acc_y': accelerations[:,1],
             'steering': steerings,
             'throttle': throttles,
+            'positions_x': positions[:,0],
+            'positions_y': positions[:,1],
             'timestamps': timestamps
         }
         today = datetime.datetime.now().strftime("%d_%m_%y_%H_%M_%S")
