@@ -1,3 +1,4 @@
+from timeit import repeat
 import numpy as np
 import pandas as pd
 import cv2 as cv
@@ -5,37 +6,46 @@ import matplotlib.pyplot as plt
 import sys
 import os
 from filterpy.monte_carlo import systematic_resample
-import scipy as sp
-from scipy import stats
-from sklearn import preprocessing
-from numba import jit,njit, vectorize, cuda
+import copy
 
+from numpy.random import uniform
+from nav_filter.filterscripts import calculate_differences
+from nav_filter.filterscripts import calculate_weights
+from nav_filter.filterscripts import data_preperation
 
+from matplotlib.animation import FuncAnimation
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
                   os.path.dirname('utils'), 
                   os.pardir)
 )
 sys.path.append(PROJECT_ROOT)
-from filterscripts import distance_map
+from nav_filter.filterscripts import distance_map
 
+'''
+Update calculates the weights for each particle with the acceleration measurement, the orientation measurement and the distance to a road
+'''
 def update(particles, weights,z, R, dm):
-    rotation_differences = abs((abs(particles[:,6]-z[2])+180) %360 - 180)# index 6 = theta
-    rot_diff_weight = 1 - preprocessing.minmax_scale(rotation_differences)
+    # use circular mean
+    rotation_differences = np.array(list(map(calculate_differences.get_rotation_difference, particles[:,6], np.full((len(particles),),z[2]))), dtype=object)
+    # content of the function abovoe:  abs(np.exp(1j*particles[:,6]/180*np.pi) - np.exp(1j*z[2]/180*np.pi))
+    #rotation_differences = abs((abs(particles[:,6]-z[2])+180) %360 - 180)# index 6 = theta
+    rot_diff_weight = calculate_weights.calculate_weights_from_differences(rotation_differences)
 
-    acceleration_difference = np.array(list(map(np.linalg.norm, z[0:2] - particles[:,4:5])), dtype=object)
-    acc_diff_weight = 1 - preprocessing.minmax_scale(acceleration_difference)
+    acceleration_difference = np.array(list(map(calculate_differences.get_acceleration_difference, np.full((len(particles),2),np.array(z[0:2])), particles[:,4:5])), dtype=object)
+    acc_diff_weight = calculate_weights.calculate_weights_from_differences(acceleration_difference)
 
     particles_image_coords = dm.coord_to_image(particles[:, 0:2])
     distances = []
     
     for p in particles_image_coords: 
         if (p[0] < dm.distance_map.shape[1] and p[0] > 0 and p[1] < dm.distance_map.shape[0] and p[1] > 0): 
-            distances.append(dm.distance_map[p[1], [0]])
+            distances.append(dm.distance_map[p[1], p[0]])
         else:
-            distances.append(np.array(1000000))
+            distances.append(0)
+
     distances = np.array(distances, dtype=object)
-    average_distances = rot_diff_weight + acc_diff_weight + distances / 3
+    average_distances = calculate_weights.get_weight_mean(rot_diff_weight, acc_diff_weight, distances)
     weights = weights * average_distances
 
     weights += 1.e-300
@@ -43,23 +53,36 @@ def update(particles, weights,z, R, dm):
     weights /= sum(weights) # normalize
     
     
+
+
+'''
+Estimate creates an estimation of all particles
+'''
 def estimate(particles, weights): 
     pos = particles[:,0:2]
     mean = np.average(pos, weights=weights, axis=0)
     var  = np.average((pos - mean)**2, weights=weights, axis=0)
     return mean, var
 
-
+'''
+Resample function resamples all particles
+'''
 def resample_from_index(particles, weights, indexes):
     particles[:] = particles[indexes]
     weights.resize(len(particles))
     weights.fill (1.0 / len(weights))
     
+'''
+Measures the number of particles contributing to the propability distribution
+'''
 def neff(weights):
     return 1. / np.sum(np.square(weights))
 
 # x = x-0,y-1,x_dot-2, y_dot-3, x_ddot-4, y_ddot-5, theta-6, delta-7
 # u = acc_x, acc_y, steering 
+'''
+Transfers the state into the next 
+'''
 def F(x, u, step, L, std, N): 
     # calculate nect velocity
     x_dot_next = x[2] + (x[4] * step) 
@@ -78,15 +101,18 @@ def F(x, u, step, L, std, N):
     
     
     return np.array([x_next, y_next,x_dot_next, y_dot_next, x_ddot_next, y_ddot_next, theta_next, delta_next], dtype=object) 
-
+'''
+Calls F for every particle
+'''
 def predict(particles, u, std, dt, L): 
     N = len(particles) 
     # Needs noise: not in a for loop
     for i in range(len(particles)): 
         particles[i] = F(particles[i], u, dt, L, std, len(particles))
 
-from numpy.random import uniform
-
+'''
+creates uniformly distributed particles
+'''
 def create_uniform_particles(x_range, y_range, x_dot_range, y_dot_range,x_ddot_range, y_ddot_range, theta_range, delta_range,N):
     particles = np.empty((N, 8))
     particles[:, 0] = uniform(x_range[0], x_range[1], size=N)
@@ -102,49 +128,37 @@ def create_uniform_particles(x_range, y_range, x_dot_range, y_dot_range,x_ddot_r
     return particles
 
 
-def get_rotation_matrix(theta): 
-    return np.array([[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]])
 
-def prepare_data(): 
+'''
+main function running the pf
+'''
+def run_pf_imu(simulation_data, sensor_std, std,dm):
     simulation_data = pd.read_csv("../../data/Sim_data_long.csv")
-    local_acc = np.stack((simulation_data['accelerometer_x'], simulation_data['accelerometer_y']), axis = 1)
-
-    matrices = []
-    for o in simulation_data['orientations'].values: 
-        matrices.append(get_rotation_matrix(o))
-    matrices = np.array(matrices)
-
-    global_acc = []
-    for i in range(len(matrices)): 
-        global_acc.append(np.dot(local_acc[i], matrices[i]))
-    global_acc = np.array(global_acc)
-    simulation_data['accelerometer_x'] = global_acc[:, 0]
-    simulation_data['accelerometer_y'] = global_acc[:, 1]
-    simulation_data['positions_y'] = -simulation_data['positions_y']
-    simulation_data['acc_y'] = -simulation_data['acc_y']
-    simulation_data['accelerometer_y'] = -simulation_data['accelerometer_y']
-    simulation_data['velocity_y'] = -simulation_data['velocity_y']
-    return simulation_data
-
-def run_pf_imu(simulation_data, sensor_std, std):
-    dm = distance_map.DistanceMap(1, 300, 'road_points_data_test')
+    
     ground_truth = np.stack([simulation_data['positions_x'], simulation_data['positions_y']], axis=1)
     zs = np.stack([simulation_data['accelerometer_x'], simulation_data['accelerometer_y'], simulation_data['orientations']], axis=1)
     us = np.stack([simulation_data['acc_x'], simulation_data['acc_y'], simulation_data['steering'].values], axis=1)
     
     Ts=simulation_data['timestamps'].values
     xs = []
+    particles_at_t = []
+    weights_at_t = []
+    ground_truth_at_t = []
+
     L = 1.8
-    N = 10000
+    N = 100
 
     x_min = dm.road_points[:,0].min()
     x_max = dm.road_points[:,0].max()
-
+    
     y_min = dm.road_points[:,1].min()
     y_max = dm.road_points[:,1].max()
-
+    
+    
+ 
     x_range = [x_min, x_max]
     y_range = [y_min, y_max]
+   
     x_dot_range = [0, 10]
     y_dot_range = [0, 10]
     x_ddot_range = [0, 10]
@@ -153,12 +167,17 @@ def run_pf_imu(simulation_data, sensor_std, std):
     theta_range = [0,2*np.pi]
     delta_range = [-np.pi/2, np.pi/2]
     particles = create_uniform_particles(x_range, y_range, x_dot_range, y_dot_range,x_ddot_range, y_ddot_range, theta_range, delta_range, N)
+    particles_image = np.array(list(map(dm.coord_to_image, particles[:, 0:2])))
+    plt.imshow(dm.distance_map)
+    plt.scatter(particles_image[:,0], particles_image[:,1], c="b")
     weights = np.full((particles.shape[0],), 1/particles.shape[0])
     std = np.array([0.2, 0.2, 0.2])
 
   
     for i,u in enumerate(Ts): 
-
+        particles_at_t.append(copy.copy(particles))
+        weights_at_t.append(copy.copy(weights))
+        ground_truth_at_t.append(copy.copy(ground_truth[i]))
         predict(particles, us[i], std, Ts[i] - Ts[i-1], L)
         
         # add noise to measurement (later done in carla?)
@@ -174,12 +193,20 @@ def run_pf_imu(simulation_data, sensor_std, std):
 
         if (i % 100 == 0): 
             print(i, " iterations done")
-        mu, var = estimate(particles,weights)
         
+        mu, var = estimate(particles,weights)
         xs.append(mu)
+   
+
     xs = np.array(xs)
-    return particles, weights, xs, ground_truth
-def plot_result(xs, ground_truth):
+    particles_at_t = np.array(particles_at_t)
+    weights_at_t = np.array(weights_at_t)
+    ground_truth_at_t = np.array(ground_truth_at_t)
+    
+    return particles_at_t, weights_at_t, xs, ground_truth_at_t, Ts
+
+
+def plot_result(particles, xs, ground_truth, dm):
     xs_image_coord = []
     for x in xs: 
         xs_image_coord.append(dm.coord_to_image(x))
@@ -190,19 +217,54 @@ def plot_result(xs, ground_truth):
         gt_image_coord.append(dm.coord_to_image(gt))
     gt_image_coord = np.array(gt_image_coord)
 
+    p_image_coord = []
+    for p in particles: 
+        p_image_coord.append(np.array(list(map(dm.coord_to_image, p[:, 0:2]))))
+    p_image_coord = np.array(p_image_coord)
     plt.imshow(dm.distance_map, cmap="gray")
     plt.scatter(xs_image_coord[:,0], xs_image_coord[:,1], label="estimations", alpha = 0.1)
     plt.scatter(gt_image_coord[:,0],gt_image_coord[:,1], label="ground truth")
+    plt.scatter(p_image_coord[:][:,1], p_image_coord[:][:,2], label="particles")
     #plt.ylim([2500, 0])
     #plt.xlim([0, 2500])
     plt.legend()
     plt.show()
 
-def main(): 
-    simulation_data = prepare_data()
-    particles, weights, xs, ground_truth = run_pf_imu(simulation_data=simulation_data, sensor_std=2, std=np.array([0.02, 0.02, 0.02]))
-    plot_result(xs, ground_truth)
 
+def plot_results_animated(particles, weights, xs, ground_truth, dm, Ts): 
+    fig, ax = plt.subplots()
+    def animate(i):
+        # First convert data to image coordinates
+        particles_image = []
+        xs_image = []
+        ground_truth_image = []
+        particles_image = np.array(list(map(dm.coord_to_image, particles[i][:, 0:2])))
+        particles_image = np.array(particles[i][:, 0:2])
+        xs_image = np.array(list(map(dm.coord_to_image, xs[i])))
+        ground_truth_image = np.array(list(map(dm.coord_to_image, ground_truth[i])))            
+        # than plot the data
+        ax.clear()
+        plt.imshow(dm.distance_map, cmap="gray")
+        ax.scatter(particles_image[:,0], particles_image[:,1], color="b", label="particles", s = weights[i]*1000)
+        #ax.plot(weights[i][:,0], weights[i][:,1], c = "yellow")
+        ax.scatter(xs_image[0], xs_image[1], color="red", label="estimation")
+        ax.scatter(ground_truth_image[0], ground_truth_image[1], color="green", label="ground truth")
+        #ax.set_ylim([2500, 0])
+        #ax.set_xlim([0, 2500])
+        plt.title("At: " + str(Ts[i]))
+        plt.legend()
+
+
+    ani = FuncAnimation(fig, animate, frames=len(xs), interval=500, repeat=True)
+    plt.show()
+
+def main(): 
+    simulation_data = data_preperation.prepare_data()
+    dm = distance_map.DistanceMap(1, 300, 'road_points_data_test')
+
+    particles, weights, xs, ground_truth, Ts = run_pf_imu(simulation_data=simulation_data, sensor_std=2, std=np.array([0.02, 0.02, 0.02]),dm=dm)
+    #plot_result(particles, xs, ground_truth, dm)
+    plot_results_animated(particles=particles, weights=weights, xs=xs, ground_truth=ground_truth, dm=dm, Ts=Ts)
 if __name__ == '__main__':
 
     main()
