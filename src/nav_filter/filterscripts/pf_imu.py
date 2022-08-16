@@ -108,7 +108,7 @@ def predict(particles, u, std, dt, L):
     N = len(particles) 
     # Needs noise: not in a for loop
     for i in range(len(particles)): 
-        particles[i] = F(particles[i], u, dt, L, std, len(particles))
+        particles[i] = F(x=particles[i], u=u, step=dt, L=L, std=std, N=len(particles))
 
 '''
 creates uniformly distributed particles
@@ -141,12 +141,13 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
     
     Ts=simulation_data['timestamps'].values
     xs = []
+    dt=1/10
     particles_at_t = []
     weights_at_t = []
     ground_truth_at_t = []
 
     L = 1.8
-    N = 100
+    N = 1000
 
     x_min = dm.road_points[:,0].min()
     x_max = dm.road_points[:,0].max()
@@ -167,25 +168,40 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
     theta_range = [0,2*np.pi]
     delta_range = [-np.pi/2, np.pi/2]
     particles = create_uniform_particles(x_range, y_range, x_dot_range, y_dot_range,x_ddot_range, y_ddot_range, theta_range, delta_range, N)
-    particles_image = np.array(list(map(dm.coord_to_image, particles[:, 0:2])))
-    plt.imshow(dm.distance_map)
-    plt.scatter(particles_image[:,0], particles_image[:,1], c="b")
+ 
     weights = np.full((particles.shape[0],), 1/particles.shape[0])
     std = np.array([0.2, 0.2, 0.2])
 
   
     for i,u in enumerate(Ts): 
+        # Test plot
+        particles_image = np.array(list(map(dm.coord_to_image, particles[:, 0:2])))
+        '''
+        plt.imshow(dm.distance_map)
+        plt.scatter(particles_image[:,0], particles_image[:,1], c="b")
+        plt.title("Before Predict")
+        plt.show()
+        '''
         particles_at_t.append(copy.copy(particles))
         weights_at_t.append(copy.copy(weights))
         ground_truth_at_t.append(copy.copy(ground_truth[i]))
-        predict(particles, us[i], std, Ts[i] - Ts[i-1], L)
-        
+
+        predict(particles=particles, u=us[i], std=std, dt=dt, L=L)
+
+        '''
+        plt.imshow(dm.distance_map)
+        plt.scatter(particles_image[:,0], particles_image[:,1], c="b")
+        plt.title("After Predict")
+        plt.show()
+        '''
+
+
         # add noise to measurement (later done in carla?)
         zs[i] += (np.random.randn(len(zs[i]))*sensor_std)
 
         update(particles, weights, zs[i], 0, dm)
         
-        if (neff(weights) < N/2): 
+        if (neff(weights) < N/10): 
             print("resample")
             indexes = systematic_resample(weights)
             resample_from_index(particles, weights, indexes)
@@ -235,13 +251,16 @@ def plot_results_animated(particles, weights, xs, ground_truth, dm, Ts):
     fig, ax = plt.subplots()
     def animate(i):
         # First convert data to image coordinates
+        print(weights.max())
         particles_image = []
         xs_image = []
         ground_truth_image = []
         particles_image = np.array(list(map(dm.coord_to_image, particles[i][:, 0:2])))
-        particles_image = np.array(particles[i][:, 0:2])
-        xs_image = np.array(list(map(dm.coord_to_image, xs[i])))
-        ground_truth_image = np.array(list(map(dm.coord_to_image, ground_truth[i])))            
+        particles_image = np.array(particles_image)
+        xs_image = dm.coord_to_image(np.array(xs[i]))
+
+        
+        ground_truth_image = dm.coord_to_image(np.array(ground_truth[i]))            
         # than plot the data
         ax.clear()
         plt.imshow(dm.distance_map, cmap="gray")
@@ -255,7 +274,7 @@ def plot_results_animated(particles, weights, xs, ground_truth, dm, Ts):
         plt.legend()
 
 
-    ani = FuncAnimation(fig, animate, frames=len(xs), interval=500, repeat=True)
+    ani = FuncAnimation(fig, animate, frames=len(xs), interval=1/10, repeat=True)
     plt.show()
 
 def main(): 
