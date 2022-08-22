@@ -7,7 +7,7 @@ import sys
 import os
 from filterpy.monte_carlo import systematic_resample
 import copy
-
+from scipy import stats
 from numpy.random import uniform
 from nav_filter.filterscripts import calculate_differences
 from nav_filter.filterscripts import calculate_weights
@@ -46,7 +46,10 @@ def update(particles, weights,z, R, dm):
 
     distances = np.array(distances, dtype=object)
     average_distances = calculate_weights.get_weight_mean(rot_diff_weight, acc_diff_weight, distances)
-    weights = weights * average_distances
+    
+
+    #old approach
+    weights = distances
 
     weights += 1.e-300
     
@@ -147,7 +150,7 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
     ground_truth_at_t = []
 
     L = 1.8
-    N = 1000
+    N = 100
 
     x_min = dm.road_points[:,0].min()
     x_max = dm.road_points[:,0].max()
@@ -201,7 +204,7 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
 
         update(particles, weights, zs[i], 0, dm)
         
-        if (neff(weights) < N/10): 
+        if (neff(weights) < N/2): 
             print("resample")
             indexes = systematic_resample(weights)
             resample_from_index(particles, weights, indexes)
@@ -248,10 +251,10 @@ def plot_result(particles, xs, ground_truth, dm):
 
 
 def plot_results_animated(particles, weights, xs, ground_truth, dm, Ts): 
+        
     fig, ax = plt.subplots()
     def animate(i):
         # First convert data to image coordinates
-        print(weights.max())
         particles_image = []
         xs_image = []
         ground_truth_image = []
@@ -259,12 +262,13 @@ def plot_results_animated(particles, weights, xs, ground_truth, dm, Ts):
         particles_image = np.array(particles_image)
         xs_image = dm.coord_to_image(np.array(xs[i]))
 
-        
+        print(weights[i].max())
+
         ground_truth_image = dm.coord_to_image(np.array(ground_truth[i]))            
         # than plot the data
         ax.clear()
         plt.imshow(dm.distance_map, cmap="gray")
-        ax.scatter(particles_image[:,0], particles_image[:,1], color="b", label="particles", s = weights[i]*1000)
+        ax.scatter(particles_image[:,0], particles_image[:,1], color="b", label="particles", s = 1/weights[i])
         #ax.plot(weights[i][:,0], weights[i][:,1], c = "yellow")
         ax.scatter(xs_image[0], xs_image[1], color="red", label="estimation")
         ax.scatter(ground_truth_image[0], ground_truth_image[1], color="green", label="ground truth")
@@ -281,7 +285,7 @@ def main():
     simulation_data = data_preperation.prepare_data()
     dm = distance_map.DistanceMap(1, 300, 'road_points_data_test')
 
-    particles, weights, xs, ground_truth, Ts = run_pf_imu(simulation_data=simulation_data, sensor_std=2, std=np.array([0.02, 0.02, 0.02]),dm=dm)
+    particles, weights, xs, ground_truth, Ts = run_pf_imu(simulation_data=simulation_data, sensor_std=2, std=np.array([0.2, 0.2, 0.2]),dm=dm)
     #plot_result(particles, xs, ground_truth, dm)
     plot_results_animated(particles=particles, weights=weights, xs=xs, ground_truth=ground_truth, dm=dm, Ts=Ts)
 if __name__ == '__main__':
