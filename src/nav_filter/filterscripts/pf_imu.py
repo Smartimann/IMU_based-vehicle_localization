@@ -23,14 +23,22 @@ from matplotlib.animation import FuncAnimation
 
 sys.path.append(PROJECT_ROOT)
 import distance_map
+import utils
+
 
 '''
 Update calculates the weights for each particle with the acceleration measurement, the orientation measurement and the distance to a road
 '''
 def update(particles, weights,z, R, dm):
     
+    # acceleration likelihood
+    acceleration_likelihoods_x = stats.norm(particles[:,4], R).pdf(z[0])
+    
+    acceleration_likelihoods_y = stats.norm(particles[:,5], R).pdf(z[1])
+    # orientation likelihood
+    rotation_likelihoods = stats.norm(particles[:,6], R).pdf(z[2])
 
-    ''' old version
+    '''
     # use circular mean
     rotation_differences = np.array(list(map(calculate_differences.get_rotation_difference, particles[:,6], np.full((len(particles),),z[2]))), dtype=object)
     # content of the function abovoe:  abs(np.exp(1j*particles[:,6]/180*np.pi) - np.exp(1j*z[2]/180*np.pi))
@@ -40,8 +48,6 @@ def update(particles, weights,z, R, dm):
     #acc_diff_weight = calculate_weights.calculate_weights_from_differences(acceleration_difference)
     print(acceleration_difference.max())
     '''
-
-
     particles_image_coords = dm.coord_to_image(particles[:, 0:2])
     distances = []
     
@@ -50,13 +56,13 @@ def update(particles, weights,z, R, dm):
             distances.append(dm.distance_map[p[1], p[0]])
         else:
             distances.append(0)
-
-    distances = np.array(distances, dtype=object)
-    #average_distances = calculate_weights.get_weight_mean(rot_diff_weight, acc_diff_weight, distances)
     
-
+    distances = np.array(distances, dtype=object)
+    average = np.array((acceleration_likelihoods_x + acceleration_likelihoods_y + rotation_likelihoods + distances) / 4)
+    #weights = weights * acceleration_likelihoods_x * acceleration_likelihoods_y * rotation_likelihoods
+    weights =  weights * distances
     #old approach
-    weights = distances
+    #weights = distances
 
     weights += 1.e-300
     
@@ -180,8 +186,10 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
     particles = create_uniform_particles(x_range, y_range, x_dot_range, y_dot_range,x_ddot_range, y_ddot_range, theta_range, delta_range, N)
  
     weights = np.full((particles.shape[0],), 1/particles.shape[0])
-    std = np.array([0.2, 0.2, 0.2])
+    std = np.array([0.2, 0.2, 0.02])
 
+    particle_values = []
+    measurement_values = []
   
     for i,u in enumerate(Ts): 
         # Test plot
@@ -209,9 +217,16 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
         # add noise to measurement (later done in carla?)
         zs[i] += (np.random.randn(len(zs[i]))*sensor_std)
 
-        update(particles, weights, zs[i], 0, dm)
+        update(particles, weights, zs[i], sensor_std, dm)
         
-        if (neff(weights) < N/2): 
+        if (i == 100): 
+            measurement_values = np.full((N,3 ), zs[i])   
+
+            particle_values = np.stack([particles[:,4], particles[:,5], particles[:,6], measurement_values[:,0], measurement_values[:,1], measurement_values[:,2]], axis=1)
+                     
+            utils.write_to_csv("test_likelihood", particle_values )
+
+        if (neff(weights) < N/4): 
             print("resample")
             indexes = systematic_resample(weights)
             resample_from_index(particles, weights, indexes)
@@ -275,7 +290,7 @@ def plot_results_animated(particles, weights, xs, ground_truth, dm, Ts):
         # than plot the data
         ax.clear()
         plt.imshow(dm.distance_map, cmap="gray")
-        ax.scatter(particles_image[:,0], particles_image[:,1], color="b", label="particles", s = 1/weights[i])
+        ax.scatter(particles_image[:,0], particles_image[:,1], color="b", label="particles", s = weights[i] * 100)
         #ax.plot(weights[i][:,0], weights[i][:,1], c = "yellow")
         ax.scatter(xs_image[0], xs_image[1], color="red", label="estimation")
         ax.scatter(ground_truth_image[0], ground_truth_image[1], color="green", label="ground truth")
@@ -292,7 +307,7 @@ def main():
     simulation_data = data_preperation.prepare_data()
     dm = distance_map.DistanceMap(1, 300, 'road_points_data_test')
 
-    particles, weights, xs, ground_truth, Ts = run_pf_imu(simulation_data=simulation_data, sensor_std=2, std=np.array([0.2, 0.2, 0.2]),dm=dm)
+    particles, weights, xs, ground_truth, Ts = run_pf_imu(simulation_data=simulation_data, sensor_std=.2, std=np.array([0.2, 0.2, 0.2]),dm=dm)
     #plot_result(particles, xs, ground_truth, dm)
     plot_results_animated(particles=particles, weights=weights, xs=xs, ground_truth=ground_truth, dm=dm, Ts=Ts)
 if __name__ == '__main__':

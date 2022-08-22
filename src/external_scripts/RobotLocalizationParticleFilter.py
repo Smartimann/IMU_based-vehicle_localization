@@ -69,7 +69,6 @@ class RobotLocalizationParticleFilter(object):
         self.weights.fill(1.)
         for i, landmark in enumerate(self.landmarks):
             distance = np.linalg.norm(self.particles[:, 0:2] - landmark, axis=1)
-            print("likelihood: ", scipy.stats.norm(distance, self.R).pdf(z[i]).max())
             self.weights *= scipy.stats.norm(distance, self.R).pdf(z[i])
             #self.weights *= Gaussian(distance, self.R, z[i])
 

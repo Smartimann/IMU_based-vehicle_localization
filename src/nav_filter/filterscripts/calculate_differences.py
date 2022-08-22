@@ -1,5 +1,14 @@
 import numpy as np
 import pandas as pd
+from scipy import stats
+
+
+'''
+Returns the likelihood a measurement corresponds with a particle state
+'''
+def get_likelihood(particle_value, R, measuerment): 
+    return stats.norm(particle_value, R).pdf(measuerment)
+
 
 
 '''
