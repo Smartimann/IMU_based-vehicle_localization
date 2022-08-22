@@ -1,39 +1,46 @@
+import sys
+import os
+PROJECT_ROOT = os.path.abspath(os.path.join(
+                  os.path.dirname('nav_filter'), 
+                  os.pardir)
+)
 from timeit import repeat
 import numpy as np
 import pandas as pd
 import cv2 as cv
 import matplotlib.pyplot as plt
-import sys
-import os
+
 from filterpy.monte_carlo import systematic_resample
 import copy
 from scipy import stats
 from numpy.random import uniform
-from nav_filter.filterscripts import calculate_differences
-from nav_filter.filterscripts import calculate_weights
-from nav_filter.filterscripts import data_preperation
+import calculate_differences
+import calculate_weights
+import data_preperation
 
 from matplotlib.animation import FuncAnimation
 
-PROJECT_ROOT = os.path.abspath(os.path.join(
-                  os.path.dirname('utils'), 
-                  os.pardir)
-)
+
 sys.path.append(PROJECT_ROOT)
-from nav_filter.filterscripts import distance_map
+import distance_map
 
 '''
 Update calculates the weights for each particle with the acceleration measurement, the orientation measurement and the distance to a road
 '''
 def update(particles, weights,z, R, dm):
+    
+
+    ''' old version
     # use circular mean
     rotation_differences = np.array(list(map(calculate_differences.get_rotation_difference, particles[:,6], np.full((len(particles),),z[2]))), dtype=object)
     # content of the function abovoe:  abs(np.exp(1j*particles[:,6]/180*np.pi) - np.exp(1j*z[2]/180*np.pi))
     #rotation_differences = abs((abs(particles[:,6]-z[2])+180) %360 - 180)# index 6 = theta
-    rot_diff_weight = calculate_weights.calculate_weights_from_differences(rotation_differences)
-
+    #rot_diff_weight = calculate_weights.calculate_weights_from_differences(rotation_differences)
     acceleration_difference = np.array(list(map(calculate_differences.get_acceleration_difference, np.full((len(particles),2),np.array(z[0:2])), particles[:,4:5])), dtype=object)
-    acc_diff_weight = calculate_weights.calculate_weights_from_differences(acceleration_difference)
+    #acc_diff_weight = calculate_weights.calculate_weights_from_differences(acceleration_difference)
+    print(acceleration_difference.max())
+    '''
+
 
     particles_image_coords = dm.coord_to_image(particles[:, 0:2])
     distances = []
@@ -45,7 +52,7 @@ def update(particles, weights,z, R, dm):
             distances.append(0)
 
     distances = np.array(distances, dtype=object)
-    average_distances = calculate_weights.get_weight_mean(rot_diff_weight, acc_diff_weight, distances)
+    #average_distances = calculate_weights.get_weight_mean(rot_diff_weight, acc_diff_weight, distances)
     
 
     #old approach
