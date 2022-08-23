@@ -31,12 +31,11 @@ Update calculates the weights for each particle with the acceleration measuremen
 '''
 def update(particles, weights,z, R, dm):
     
+    acc_measured = np.linalg.norm(z[0:2])
     # acceleration likelihood
-    acceleration_likelihoods_x = stats.norm(particles[:,4], R).pdf(z[0])
-    
-    acceleration_likelihoods_y = stats.norm(particles[:,5], R).pdf(z[1])
+    acceleration_likelihoods = stats.norm(particles[:,3], R).pdf(acc_measured)
     # orientation likelihood
-    rotation_likelihoods = stats.norm(particles[:,6], R).pdf(z[2])
+    rotation_likelihoods = stats.norm(particles[:,4], R).pdf(z[2])
 
     '''
     # use circular mean
@@ -63,9 +62,9 @@ def update(particles, weights,z, R, dm):
             distances.append(0)
     
     distances = np.array(distances, dtype=object)
-    average = np.array((acceleration_likelihoods_x + acceleration_likelihoods_y + rotation_likelihoods + distances) / 4)
-    #weights = weights * acceleration_likelihoods_x * acceleration_likelihoods_y * rotation_likelihoods
-    weights =  weights * (acceleration_likelihoods_x * acceleration_likelihoods_y) 
+    average = np.array((acceleration_likelihoods + rotation_likelihoods + distances) / 4)
+    #weights = weights * acceleration_likelihoods * rotation_likelihoods
+    weights =  weights * (acceleration_likelihoods) 
     #old approach
     #weights = distances
 
@@ -99,12 +98,31 @@ Measures the number of particles contributing to the propability distribution
 def neff(weights):
     return 1. / np.sum(np.square(weights))
 
-# x = x-0,y-1,x_dot-2, y_dot-3, x_ddot-4, y_ddot-5, theta-6, delta-7
-# u = acc_x, acc_y, steering 
+# x = x, y, v, a, theta, delta
+
+
+# u = acc, steering 
+# z = acc_x, acc_y, rot
 '''
 Transfers the state into the next 
 '''
 def F(x, u, step, L, std, N): 
+    # calculate nect velocity
+    v_next = x[2] + (x[3] * step)
+    # control input as next acceleration
+    a_next = u[0] + (np.random.uniform(0,1,1) * std[0])
+    # get next position
+    x_next = x[0] + (x[2]*np.cos(x[4] + x[5]) * step)
+    y_next = x[1] + (x[2]*np.sin(x[4] + x[5]) * step)
+    #calculate theta and delta
+    theta_next = x[4] + (((x[2]*np.sin(x[5]))/L) * step)
+    delta_next = x[5] + ((u[1] + np.random.uniform(0,1,1)*std[1]) * step)
+    return np.array([x_next, y_next,v_next, a_next, theta_next, delta_next], dtype=object) 
+
+'''
+This function uses an acceleration and velocity with a directon. The two wheeled bycicle model doesnt need that 
+'''
+def F_old(x, u, step, L, std, N): 
     # calculate nect velocity
     x_dot_next = x[2] + (x[4] * step) 
     y_dot_next = x[3] + (x[5] * step)
@@ -128,24 +146,22 @@ Calls F for every particle
 def predict(particles, u, std, dt, L): 
     N = len(particles) 
     # Needs noise: not in a for loop
-    for i in range(len(particles)): 
+    for i in range(N): 
         particles[i] = F(x=particles[i], u=u, step=dt, L=L, std=std, N=len(particles))
 
 '''
 creates uniformly distributed particles
 '''
-def create_uniform_particles(x_range, y_range, x_dot_range, y_dot_range,x_ddot_range, y_ddot_range, theta_range, delta_range,N):
-    particles = np.empty((N, 8))
+def create_uniform_particles(x_range, y_range, v_range, a_range, theta_range, delta_range,N):
+    particles = np.empty((N, 6))
     particles[:, 0] = uniform(x_range[0], x_range[1], size=N)
     particles[:, 1] = uniform(y_range[0], y_range[1], size=N)
-    particles[:, 2] = uniform(x_dot_range[0], x_dot_range[1], size=N)
-    particles[:, 3] = uniform(y_dot_range[0], y_dot_range[1], size=N)
-    particles[:, 4] = uniform(x_ddot_range[0], x_ddot_range[1], size=N)
-    particles[:, 5] = uniform(y_ddot_range[0], y_ddot_range[1], size=N)    
-    particles[:, 6] = uniform(theta_range[0], theta_range[1], size=N)
-    particles[:, 7] = uniform(delta_range[0], delta_range[1], size=N)
-    particles[:, 6] %= 2 * np.pi
-    particles[:, 7] %= 2 * np.pi
+    particles[:, 2] = uniform(v_range[0], v_range[1], size=N)
+    particles[:, 3] = uniform(a_range[0], a_range[1], size=N)
+    particles[:, 4] = uniform(theta_range[0], theta_range[1], size=N)
+    particles[:, 5] = uniform(delta_range[0], delta_range[1], size=N)
+    particles[:, 4] %= 2 * np.pi
+    particles[:, 5] %= 2 * np.pi
     return particles
 
 
@@ -154,10 +170,9 @@ def create_uniform_particles(x_range, y_range, x_dot_range, y_dot_range,x_ddot_r
 main function running the pf
 '''
 def run_pf_imu(simulation_data, sensor_std, std,dm):
-    simulation_data = pd.read_csv("../../data/Sim_data_long.csv")
-    
+   
     ground_truth = np.stack([simulation_data['positions_x'], simulation_data['positions_y']], axis=1)
-    zs = np.stack([simulation_data['accelerometer_x'], simulation_data['accelerometer_y'], simulation_data['orientations']], axis=1)
+    zs = np.stack([simulation_data['acc_x_noise'], simulation_data['acc_y_noise'], simulation_data['orientations']], axis=1)
     us = np.stack([simulation_data['acc_x'], simulation_data['acc_y'], simulation_data['steering'].values], axis=1)
     
     Ts=simulation_data['timestamps'].values
@@ -168,7 +183,7 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
     ground_truth_at_t = []
 
     L = 1.8
-    N = 10000
+    N = 100
 
     x_min = dm.road_points[:,0].min()
     x_max = dm.road_points[:,0].max()
@@ -181,43 +196,26 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
     x_range = [x_min, x_max]
     y_range = [y_min, y_max]
    
-    x_dot_range = [0, 10]
-    y_dot_range = [0, 10]
-    x_ddot_range = [0, 10]
-    y_ddot_range = [0, 10]
+    v_range = [0, 10]
+    a_range = [0, 10]
 
     theta_range = [0,2*np.pi]
     delta_range = [-np.pi/2, np.pi/2]
-    particles = create_uniform_particles(x_range, y_range, x_dot_range, y_dot_range,x_ddot_range, y_ddot_range, theta_range, delta_range, N)
+    particles = create_uniform_particles(x_range, y_range, v_range, a_range, theta_range, delta_range, N)
  
     weights = np.full((particles.shape[0],), 1/particles.shape[0])
-    std = np.array([0.2, 0.2, 0.02])
+    std = np.array([0.2, 0.02])
 
     particle_values = []
     measurement_values = []
   
     for i,u in enumerate(Ts): 
         # Test plot
-        particles_image = np.array(list(map(dm.coord_to_image, particles[:, 0:2])))
-        '''
-        plt.imshow(dm.distance_map)
-        plt.scatter(particles_image[:,0], particles_image[:,1], c="b")
-        plt.title("Before Predict")
-        plt.show()
-        '''
         particles_at_t.append(copy.copy(particles))
         weights_at_t.append(copy.copy(weights))
         ground_truth_at_t.append(copy.copy(ground_truth[i]))
 
         predict(particles=particles, u=us[i], std=std, dt=dt, L=L)
-
-        '''
-        plt.imshow(dm.distance_map)
-        plt.scatter(particles_image[:,0], particles_image[:,1], c="b")
-        plt.title("After Predict")
-        plt.show()
-        '''
-
 
         # add noise to measurement (later done in carla?)
         zs[i] += (np.random.randn(len(zs[i]))*sensor_std)
@@ -227,7 +225,7 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
         if (i == 100): 
             measurement_values = np.full((N,3 ), zs[i])   
 
-            particle_values = np.stack([particles[:,4], particles[:,5], particles[:,6], measurement_values[:,0], measurement_values[:,1], measurement_values[:,2]], axis=1)
+            particle_values = np.stack([particles[:,3], particles[:,4], measurement_values[:,0], measurement_values[:,1], measurement_values[:,2]], axis=1)
                      
             utils.write_to_csv("test_likelihood", particle_values )
 

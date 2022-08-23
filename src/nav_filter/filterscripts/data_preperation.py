@@ -9,9 +9,9 @@ def linear_coord_transformation(local_acc: np.ndarray, rot_matrix: np.ndarray):
     return global_acc
 
 def prepare_data(): 
-    simulation_data = pd.read_csv("../../data/Sim_data_long.csv")
+    simulation_data = pd.read_csv("../../data/noisedSimData.csv")
 
-    local_acc = np.stack((simulation_data['accelerometer_x'], simulation_data['accelerometer_y']), axis = 1)
+    local_acc = np.stack((simulation_data['acc_x_noise'], simulation_data['acc_y_noise']), axis = 1)
     matrices = []
     for o in simulation_data['orientations'].values: 
         matrices.append(get_rotation_matrix(o))
@@ -22,10 +22,10 @@ def prepare_data():
         global_acc.append(linear_coord_transformation(local_acc[i], matrices[i]))
     
     global_acc = np.array(global_acc)
-    simulation_data['accelerometer_x'] = global_acc[:, 0]
-    simulation_data['accelerometer_y'] = global_acc[:, 1]
+    simulation_data['acc_x_noise'] = global_acc[:, 0]
+    simulation_data['acc_y_noise'] = global_acc[:, 1]
     simulation_data['positions_y'] = -simulation_data['positions_y']
-    simulation_data['acc_y'] = -simulation_data['acc_y']
-    simulation_data['accelerometer_y'] = -simulation_data['accelerometer_y']
+    #simulation_data['acc_y'] = -simulation_data['acc_y']
+    simulation_data['acc_y_noise'] = -simulation_data['acc_y_noise']
     simulation_data['velocity_y'] = -simulation_data['velocity_y']
     return simulation_data
