@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import os
 import sys
+from typing import Iterator
 # Define root folder
 PROJECT_ROOT = os.path.abspath(os.path.join(
                   os.path.dirname(__file__), 
@@ -25,6 +26,9 @@ import glob
 from time import time
 import numpy.random as random
 import utils
+
+from queue import Queue
+from queue import Empty
 
 try:
     import numpy as np
@@ -54,6 +58,7 @@ import carla
 def run_simulation(args, client): 
     actor_list = []
     accelerometer_values = []
+    accelerometer_values_noise = []
     gyroscope_values = []
     timestamps = []
     positions = []
@@ -67,6 +72,8 @@ def run_simulation(args, client):
         blueprint_library = world.get_blueprint_library()
 
         bp_vehicle = blueprint_library.filter('a2')[0]
+        
+
 
         if bp_vehicle.has_attribute('color'): 
             color = random.choice(bp_vehicle.get_attribute('color').recommended_values)
@@ -92,16 +99,15 @@ def run_simulation(args, client):
         # --------------
         # Add IMU sensor to ego vehicle. 
         # --------------
-
-
         imu_bp = world.get_blueprint_library().find('sensor.other.imu')
         imu_location = carla.Location(0,0,0)
         imu_rotation = carla.Rotation(0,0,0)
         imu_transform = carla.Transform(imu_location,imu_rotation)
         imu_bp.set_attribute("sensor_tick",str(1/10))
         ego_imu = world.spawn_actor(imu_bp,imu_transform,attach_to=vehicle, attachment_type=carla.AttachmentType.Rigid)
+
         def imu_callback(imu):
-            accelerometer_values.append(np.array([imu.accelerometer.x, imu.accelerometer.y, imu.accelerometer.z]))
+            accelerometer_values.append(np.array([imu.accelerometer.x, imu.accelerometer.y, imu.accelerometer.z]))      
             gyroscope_values.append(np.array([imu.gyroscope.x, imu.gyroscope.y, imu.gyroscope.z]))
             timestamps.append(imu.timestamp)
             steerings.append(vehicle.get_wheel_steer_angle(carla.VehicleWheelLocation.FL_Wheel))
@@ -109,11 +115,11 @@ def run_simulation(args, client):
             throttles.append(vehicle_control.throttle)
             orientations.append((imu.compass + np.pi) % np.pi*2)
             velocities.append(np.array([vehicle.get_velocity().x, vehicle.get_velocity().y]))
-            accelerations.append(np.array([vehicle.get_acceleration().x, vehicle.get_acceleration().y]))
+            accelerations.append(np.array([vehicle.get_acceleration().x, vehicle.get_acceleration().y, vehicle.get_acceleration().z]))
             positions.append(np.array([vehicle.get_transform().location.x, vehicle.get_transform().location.y]))
+            
+
         ego_imu.listen(lambda imu: imu_callback(imu))
-
-
         # game loop
         while True: 
             if args.sync:
@@ -122,12 +128,18 @@ def run_simulation(args, client):
                 world.wait_for_tick()
             
     finally: 
+        ego_imu.destroy()
+        client.apply_batch([carla.command.DestroyActor(x) for x in actor_list])
+        print("Finished retrieving sensor data")
         accelerometer_values = np.array(accelerometer_values)
+        accelerometer_values_noise = np.array(accelerometer_values_noise)
         gyroscope_values = np.array(gyroscope_values)
         timestamps = np.array(timestamps)
         velocities = np.array(velocities)
         accelerations = np.array(accelerations)
         positions = np.array(positions)
+        
+
         retrieved_data = {
             'accelerometer_x': accelerometer_values[:, 0], 
             'accelerometer_y': accelerometer_values[:, 1], 
@@ -140,6 +152,7 @@ def run_simulation(args, client):
             'velocity_y': velocities[:,1],
             'acc_x': accelerations[:,0], 
             'acc_y': accelerations[:,1],
+            'acc_z': accelerations[:,2],
             'steering': steerings,
             'throttle': throttles,
             'positions_x': positions[:,0],
@@ -158,8 +171,7 @@ def run_simulation(args, client):
         }
         utils.write_to_csv('car_positions', position_data)
         print('destorying all actors')
-        ego_imu.destroy()
-        client.apply_batch([carla.command.DestroyActor(x) for x in actor_list])
+
         print('done.')
 
 def main():

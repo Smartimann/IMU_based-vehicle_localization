@@ -4,6 +4,14 @@
 2. Zustandstransferfunktion funktioniert nicht richtig
 3. Orientation mit Steering-Angle verwechselt
 
+## ToDos
+1. Simulationsdaten checken
+    1. Accelerometer checken
+    2. Koordinatensysteme in der Simulation darstellen
+    3. Weightberechnung für Acceleration anpassen
+    4. Distance Map verfeinern
+    5. Eventuell nur auf Accelerometer gehen und verrauschtes nicht nehmen
+
 
 # Notes for Sensors
 ## Orientation Sensor

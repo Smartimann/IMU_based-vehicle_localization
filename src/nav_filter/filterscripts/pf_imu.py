@@ -53,14 +53,19 @@ def update(particles, weights,z, R, dm):
     
     for p in particles_image_coords: 
         if (p[0] < dm.distance_map.shape[1] and p[0] > 0 and p[1] < dm.distance_map.shape[0] and p[1] > 0): 
-            distances.append(dm.distance_map[p[1], p[0]])
+            value = dm.distance_map[p[1], p[0]]
+            if (value <= 0.7): 
+                value /= 50
+            else: 
+                value = 1
+            distances.append(value)
         else:
             distances.append(0)
     
     distances = np.array(distances, dtype=object)
     average = np.array((acceleration_likelihoods_x + acceleration_likelihoods_y + rotation_likelihoods + distances) / 4)
     #weights = weights * acceleration_likelihoods_x * acceleration_likelihoods_y * rotation_likelihoods
-    weights =  weights * distances
+    weights =  weights * (acceleration_likelihoods_x * acceleration_likelihoods_y) 
     #old approach
     #weights = distances
 
@@ -163,7 +168,7 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
     ground_truth_at_t = []
 
     L = 1.8
-    N = 100
+    N = 10000
 
     x_min = dm.road_points[:,0].min()
     x_max = dm.road_points[:,0].max()
@@ -225,6 +230,8 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
             particle_values = np.stack([particles[:,4], particles[:,5], particles[:,6], measurement_values[:,0], measurement_values[:,1], measurement_values[:,2]], axis=1)
                      
             utils.write_to_csv("test_likelihood", particle_values )
+
+            break
 
         if (neff(weights) < N/4): 
             print("resample")

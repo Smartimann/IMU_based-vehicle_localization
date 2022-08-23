@@ -45,6 +45,7 @@ class DistanceMap():
         self.distance_map = cv.distanceTransform(inverted_map, cv.DIST_L2, 3, cv.CV_8U)
         cv.normalize(self.distance_map, self.distance_map, 0, 1.0, cv.NORM_MINMAX)
         self.distance_map = 1- self.distance_map
+        self.save_distance_map()
 
     def coord_to_image(self, point): 
         point = (point * self.to_array_indices).astype(int)
@@ -81,7 +82,7 @@ class DistanceMap():
         cv.imwrite(PROJECT_ROOT + "\..\data\images\map.png",255*self.map_array)
 
     def save_distance_map(self): 
-        cv.imwrite(PROJECT_ROOT + "\..\data\images\distanceMap.png",255*self.distance_map)
+        cv.imwrite(PROJECT_ROOT + "\..\data\images\distanceMapHighContrast.png",255*self.distance_map)
                           
 
 
