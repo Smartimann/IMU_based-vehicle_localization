@@ -34,20 +34,11 @@ def update(particles, weights,z, R, dm):
     
     acc_measured = np.linalg.norm(z[0:2])
     # acceleration likelihood
-    acceleration_likelihoods = stats.norm(particles[:,3], (R[0]+R[1])/2).pdf(acc_measured)
+    acceleration_likelihoods = stats.norm(particles[:,3], R[0]).pdf(acc_measured)
     # orientation likelihood
     rotation_likelihoods = stats.norm(particles[:,4], R[2]).pdf(z[2])
 
-    '''
-    # use circular mean
-    rotation_differences = np.array(list(map(calculate_differences.get_rotation_difference, particles[:,6], np.full((len(particles),),z[2]))), dtype=object)
-    # content of the function abovoe:  abs(np.exp(1j*particles[:,6]/180*np.pi) - np.exp(1j*z[2]/180*np.pi))
-    #rotation_differences = abs((abs(particles[:,6]-z[2])+180) %360 - 180)# index 6 = theta
-    #rot_diff_weight = calculate_weights.calculate_weights_from_differences(rotation_differences)
-    acceleration_difference = np.array(list(map(calculate_differences.get_acceleration_difference, np.full((len(particles),2),np.array(z[0:2])), particles[:,4:5])), dtype=object)
-    #acc_diff_weight = calculate_weights.calculate_weights_from_differences(acceleration_difference)
-    print(acceleration_difference.max())
-    '''
+
     particles_image_coords = dm.coord_to_image(particles[:, 0:2])
     distances = []
     
@@ -63,15 +54,19 @@ def update(particles, weights,z, R, dm):
             distances.append(0)
     
     distances = np.array(distances, dtype=object)
-    average = np.array((acceleration_likelihoods + rotation_likelihoods + distances) / 4)
-    #weights = weights * acceleration_likelihoods * rotation_likelihoods
-    weights =  weights * (distances) 
+    average = np.array((acceleration_likelihoods + rotation_likelihoods + distances) / 3)
+    #weights = weights * acceleration_likelihoods * rotation_likelihoods * distances
+    
+    weights = weights * average 
+
+    #print(weights.min(),weights.max())
     #old approach
     #weights = distances
 
     weights += 1.e-300
     
     weights /= sum(weights) # normalize
+    return weights
     
     
 
@@ -91,8 +86,9 @@ Resample function resamples all particles
 def resample_from_index(particles, weights, indexes):
     particles[:] = particles[indexes]
     weights.resize(len(particles))
-    weights.fill (1.0 / len(weights))
-    
+    weights.fill(1.0 / len(weights))
+    weights =  np.array(weights, dtype=float)
+    return weights, particles
 '''
 Measures the number of particles contributing to the propability distribution
 '''
@@ -149,7 +145,7 @@ def predict(particles, u, std, dt, L):
     # Needs noise: not in a for loop
     for i in range(N): 
         particles[i] = F(x=particles[i], u=u, step=dt, L=L, std=std, N=len(particles))
-
+    return particles
 '''
 creates uniformly distributed particles
 '''
@@ -191,9 +187,7 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
     
     y_min = dm.road_points[:,1].min()
     y_max = dm.road_points[:,1].max()
-    
-    
- 
+     
     x_range = [x_min, x_max]
     y_range = [y_min, y_max]
    
@@ -204,7 +198,7 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
     delta_range = [-np.pi/2, np.pi/2]
     particles = create_uniform_particles(x_range, y_range, v_range, a_range, theta_range, delta_range, N)
  
-    weights = np.full((particles.shape[0],), 1/particles.shape[0])
+    weights = np.full((particles.shape[0],), 1/particles.shape[0], dtype=float)
     std = np.array([0.2, 0.02])
 
     particle_values = []
@@ -216,25 +210,30 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
         weights_at_t.append(copy.copy(weights))
         ground_truth_at_t.append(copy.copy(ground_truth[i]))
 
-        predict(particles=particles, u=us[i], std=std, dt=dt, L=L)
+        particles = predict(particles=particles, u=us[i], std=std, dt=dt, L=L)
 
         # add noise to measurement (later done in carla?) --> We create the noise in dara preperation
         #zs[i] += (np.random.randn(len(zs[i]))*sensor_std)
 
-        update(particles=particles, weights=weights, z=zs[i], R=sensor_std, dm=dm)
-        
+        weights=update(particles=particles, weights=weights, z=zs[i], R=sensor_std, dm=dm)
         if (i == 100): 
             measurement_values = np.full((N,3 ), zs[i])   
 
             particle_values = np.stack([particles[:,3], particles[:,4], measurement_values[:,0], measurement_values[:,1], measurement_values[:,2]], axis=1)
-                     
-            utils.write_to_csv("test_likelihood", particle_values )
+            data = {
+                'acc': particle_values[:,0], 
+                'theta': particle_values[:,1], 
+                'acc_x': particle_values[:,2], 
+                'acc_y': particle_values[:,3], 
+                'orientation': particle_values[:,4], 
+            }                     
+            utils.write_to_csv("test_likelihood_2", data )
 
 
-        if (neff(weights) < N/4): 
+        if (neff(weights) < N/2): 
             print("resample")
             indexes = systematic_resample(weights)
-            resample_from_index(particles, weights, indexes)
+            weights, particles = resample_from_index(particles, weights, indexes)
             assert np.allclose(weights, 1/N)
 
         if (i % 100 == 0): 
@@ -244,10 +243,10 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
         xs.append(mu)
    
 
-    xs = np.array(xs)
-    particles_at_t = np.array(particles_at_t)
-    weights_at_t = np.array(weights_at_t)
-    ground_truth_at_t = np.array(ground_truth_at_t)
+    xs = np.array(xs, dtype=float)
+    particles_at_t = np.array(particles_at_t, dtype=float)
+    weights_at_t = np.array(weights_at_t, dtype=float)
+    ground_truth_at_t = np.array(ground_truth_at_t, dtype=float)
     
     return particles_at_t, weights_at_t, xs, ground_truth_at_t, Ts
 
@@ -279,6 +278,10 @@ def plot_result(particles, xs, ground_truth, dm):
 
 def plot_results_animated(particles, weights, xs, ground_truth, dm, Ts): 
         
+    print("Particles: ",particles.dtype)
+    print("weights: ",weights.dtype)
+    print("xs: ",xs.dtype)
+    print("ground_truth: ",ground_truth.dtype)
     fig, ax = plt.subplots()
     def animate(i):
         # First convert data to image coordinates
