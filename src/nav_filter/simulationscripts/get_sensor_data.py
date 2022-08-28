@@ -11,6 +11,7 @@
 from __future__ import print_function
 
 import os
+from re import S
 import sys
 from typing import Iterator
 # Define root folder
@@ -59,20 +60,27 @@ def run_simulation(args, client):
     actor_list = []
     accelerometer_values = []
     accelerometer_values_noise = []
-    gyroscope_values = []
     timestamps = []
     positions = []
     orientations = []
-    velocities = []
     steerings = []
     throttles = []
-    accelerations = [] 
     try: 
+        # Get the world and apply world settings
         world = client.get_world()
+        settings = world.get_settings()
+        if not settings.synchronous_mode:
+            settings.synchronous_mode = True
+        # fixed_delta_seconds need  <= max_substep_delta_time * max_substeps
+        settings.fixed_delta_seconds = .05
+        settings.max_substep_delta_time = 0.01
+        settings.max_substeps = 10
+        print("Settings", settings)
+        world.apply_settings(settings)
+
         blueprint_library = world.get_blueprint_library()
 
         bp_vehicle = blueprint_library.filter('a2')[0]
-        
 
 
         if bp_vehicle.has_attribute('color'): 
@@ -85,17 +93,17 @@ def run_simulation(args, client):
         actor_list.append(vehicle)
         print('created %s' % vehicle.type_id)
         
-        vehicle.set_autopilot(True)
+        tm = client.get_trafficmanager()
+        tm_port = tm.get_port()
+        tm.set_synchronous_mode(True)
+        #vehicle.set_autopilot(True)
+        vehicle.set_autopilot(True, tm_port)
         vehicle_control = vehicle.get_control()
-        vehicle_physics_control = vehicle.get_physics_control()
-        front_wheels = vehicle_physics_control.wheels[0:2]
-        # --------------
-        # Spectator on ego position
-        # --------------
-        spectator = world.get_spectator()
-        world_snapshot = world.wait_for_tick() 
-        spectator.set_transform(vehicle.get_transform())
-        #measurement, sensor_data = client.read_data()
+        
+        #spectator = world.get_spectator()
+        #spectator.set_transform(vehicle.get_transform())
+
+
         # --------------
         # Add IMU sensor to ego vehicle. 
         # --------------
@@ -107,15 +115,12 @@ def run_simulation(args, client):
         ego_imu = world.spawn_actor(imu_bp,imu_transform,attach_to=vehicle, attachment_type=carla.AttachmentType.Rigid)
 
         def imu_callback(imu):
-            accelerometer_values.append(np.array([imu.accelerometer.x, imu.accelerometer.y, imu.accelerometer.z]))      
-            gyroscope_values.append(np.array([imu.gyroscope.x, imu.gyroscope.y, imu.gyroscope.z]))
+            accelerometer_values.append(np.array([imu.accelerometer.x, imu.accelerometer.y, imu.accelerometer.z]))  
+            print(imu.accelerometer)    
             timestamps.append(imu.timestamp)
             steerings.append(vehicle.get_wheel_steer_angle(carla.VehicleWheelLocation.FL_Wheel))
-            #print(front_wheels[0])
             throttles.append(vehicle_control.throttle)
             orientations.append((imu.compass + np.pi) % np.pi*2)
-            velocities.append(np.array([vehicle.get_velocity().x, vehicle.get_velocity().y]))
-            accelerations.append(np.array([vehicle.get_acceleration().x, vehicle.get_acceleration().y, vehicle.get_acceleration().z]))
             positions.append(np.array([vehicle.get_transform().location.x, vehicle.get_transform().location.y]))
             
 
@@ -126,17 +131,15 @@ def run_simulation(args, client):
                 world.tick()
             else:
                 world.wait_for_tick()
-            
     finally: 
+        print("End sensor retrievment")
         ego_imu.destroy()
-        client.apply_batch([carla.command.DestroyActor(x) for x in actor_list])
+        #client.apply_batch([carla.command.DestroyActor(x) for x in actor_list])
+        vehicle.destroy()
         print("Finished retrieving sensor data")
         accelerometer_values = np.array(accelerometer_values)
         accelerometer_values_noise = np.array(accelerometer_values_noise)
-        gyroscope_values = np.array(gyroscope_values)
         timestamps = np.array(timestamps)
-        velocities = np.array(velocities)
-        accelerations = np.array(accelerations)
         positions = np.array(positions)
         
 
@@ -144,15 +147,7 @@ def run_simulation(args, client):
             'accelerometer_x': accelerometer_values[:, 0], 
             'accelerometer_y': accelerometer_values[:, 1], 
             'accelerometer_z': accelerometer_values[:, 2],
-            'gyroscope_x': gyroscope_values[:,0],
-            'gyroscope_y': gyroscope_values[:,1],
-            'gyroscope_z': gyroscope_values[:,2], 
             'orientations': orientations,
-            'velocity_x': velocities[:,0],
-            'velocity_y': velocities[:,1],
-            'acc_x': accelerations[:,0], 
-            'acc_y': accelerations[:,1],
-            'acc_z': accelerations[:,2],
             'steering': steerings,
             'throttle': throttles,
             'positions_x': positions[:,0],

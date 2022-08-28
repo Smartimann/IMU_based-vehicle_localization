@@ -24,6 +24,7 @@ from matplotlib.animation import FuncAnimation
 sys.path.append(PROJECT_ROOT)
 import distance_map
 import utils
+import config
 
 
 '''
@@ -33,9 +34,9 @@ def update(particles, weights,z, R, dm):
     
     acc_measured = np.linalg.norm(z[0:2])
     # acceleration likelihood
-    acceleration_likelihoods = stats.norm(particles[:,3], R).pdf(acc_measured)
+    acceleration_likelihoods = stats.norm(particles[:,3], (R[0]+R[1])/2).pdf(acc_measured)
     # orientation likelihood
-    rotation_likelihoods = stats.norm(particles[:,4], R).pdf(z[2])
+    rotation_likelihoods = stats.norm(particles[:,4], R[2]).pdf(z[2])
 
     '''
     # use circular mean
@@ -64,7 +65,7 @@ def update(particles, weights,z, R, dm):
     distances = np.array(distances, dtype=object)
     average = np.array((acceleration_likelihoods + rotation_likelihoods + distances) / 4)
     #weights = weights * acceleration_likelihoods * rotation_likelihoods
-    weights =  weights * (acceleration_likelihoods) 
+    weights =  weights * (distances) 
     #old approach
     #weights = distances
 
@@ -119,10 +120,9 @@ def F(x, u, step, L, std, N):
     delta_next = x[5] + ((u[1] + np.random.uniform(0,1,1)*std[1]) * step)
     return np.array([x_next, y_next,v_next, a_next, theta_next, delta_next], dtype=object) 
 
-'''
-This function uses an acceleration and velocity with a directon. The two wheeled bycicle model doesnt need that 
-'''
+
 def F_old(x, u, step, L, std, N): 
+    '''This function uses an acceleration and velocity with a directon. The two wheeled bycicle model doesnt need that '''
     # calculate nect velocity
     x_dot_next = x[2] + (x[4] * step) 
     y_dot_next = x[3] + (x[5] * step)
@@ -140,10 +140,11 @@ def F_old(x, u, step, L, std, N):
     
     
     return np.array([x_next, y_next,x_dot_next, y_dot_next, x_ddot_next, y_ddot_next, theta_next, delta_next], dtype=object) 
-'''
-Calls F for every particle
-'''
+
 def predict(particles, u, std, dt, L): 
+    '''
+    Calls F for every particle
+    '''
     N = len(particles) 
     # Needs noise: not in a for loop
     for i in range(N): 
@@ -173,7 +174,7 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
    
     ground_truth = np.stack([simulation_data['positions_x'], simulation_data['positions_y']], axis=1)
     zs = np.stack([simulation_data['acc_x_noise'], simulation_data['acc_y_noise'], simulation_data['orientations']], axis=1)
-    us = np.stack([simulation_data['acc_x'], simulation_data['acc_y'], simulation_data['steering'].values], axis=1)
+    us = np.stack([simulation_data['acceleration_control_input'], simulation_data['steering'].values], axis=1)
     
     Ts=simulation_data['timestamps'].values
     xs = []
@@ -182,8 +183,8 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
     weights_at_t = []
     ground_truth_at_t = []
 
-    L = 1.8
-    N = 100
+    L = config.L
+    N = config.N
 
     x_min = dm.road_points[:,0].min()
     x_max = dm.road_points[:,0].max()
@@ -217,10 +218,10 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
 
         predict(particles=particles, u=us[i], std=std, dt=dt, L=L)
 
-        # add noise to measurement (later done in carla?)
-        zs[i] += (np.random.randn(len(zs[i]))*sensor_std)
+        # add noise to measurement (later done in carla?) --> We create the noise in dara preperation
+        #zs[i] += (np.random.randn(len(zs[i]))*sensor_std)
 
-        update(particles, weights, zs[i], sensor_std, dm)
+        update(particles=particles, weights=weights, z=zs[i], R=sensor_std, dm=dm)
         
         if (i == 100): 
             measurement_values = np.full((N,3 ), zs[i])   
@@ -229,7 +230,6 @@ def run_pf_imu(simulation_data, sensor_std, std,dm):
                      
             utils.write_to_csv("test_likelihood", particle_values )
 
-            break
 
         if (neff(weights) < N/4): 
             print("resample")
@@ -309,10 +309,10 @@ def plot_results_animated(particles, weights, xs, ground_truth, dm, Ts):
     plt.show()
 
 def main(): 
-    simulation_data = data_preperation.prepare_data()
-    dm = distance_map.DistanceMap(1, 300, 'road_points_data_test')
+    simulation_data = data_preperation.prepare_data(config.simulation_data_dataset)
+    dm = distance_map.DistanceMap(1, 300, config.road_points_dataset)
 
-    particles, weights, xs, ground_truth, Ts = run_pf_imu(simulation_data=simulation_data, sensor_std=.2, std=np.array([0.2, 0.2, 0.2]),dm=dm)
+    particles, weights, xs, ground_truth, Ts = run_pf_imu(simulation_data=simulation_data, sensor_std=config.sensor_std, std=config.std,dm=dm)
     #plot_result(particles, xs, ground_truth, dm)
     plot_results_animated(particles=particles, weights=weights, xs=xs, ground_truth=ground_truth, dm=dm, Ts=Ts)
 if __name__ == '__main__':

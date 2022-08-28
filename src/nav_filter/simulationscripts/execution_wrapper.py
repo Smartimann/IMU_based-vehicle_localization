@@ -73,7 +73,7 @@ def main():
 
     try:
         client = carla.Client(args.host, args.port)
-        client.set_timeout(5.0)
+        client.set_timeout(2.0)
 
         # If a connection to the server could be established, import the wanted script and 
         # run its code
